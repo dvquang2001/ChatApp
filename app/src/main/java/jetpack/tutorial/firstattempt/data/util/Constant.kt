@@ -9,4 +9,5 @@ object Constant {
     // field
     const val ID_FIELD = "id"
     const val USERS_FIELD = "users"
+    const val TIME_SENT = "timeSent"
 }

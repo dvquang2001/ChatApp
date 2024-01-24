@@ -14,6 +14,7 @@ import jetpack.tutorial.firstattempt.domain.model.main.UserModel
 import jetpack.tutorial.firstattempt.domain.usecase.main.check_users_pair.CheckUserPairParam
 import jetpack.tutorial.firstattempt.domain.usecase.main.check_users_pair.CheckUsersPairUseCase
 import jetpack.tutorial.firstattempt.domain.usecase.main.check_users_pair.toParam
+import jetpack.tutorial.firstattempt.domain.usecase.main.get_all_messages.GetAllMessagesParam
 import jetpack.tutorial.firstattempt.domain.usecase.main.get_all_messages.GetAllMessagesUseCase
 import jetpack.tutorial.firstattempt.domain.usecase.main.get_conversation.GetConversationUseCase
 import jetpack.tutorial.firstattempt.domain.usecase.main.get_current_user.GetCurrentUserUseCase
@@ -126,18 +127,24 @@ class ChatViewModel @Inject constructor(
             .launchIn(coroutineScope)
     }
 
-    private fun getMessages() {
+    private fun getMessages(loadCount: Int) {
         conversationId?.let {
             getMessagesJob?.cancel()
-            getMessagesJob = getAllMessagesUseCase.execute(it)
+            getMessagesJob = getAllMessagesUseCase.execute(GetAllMessagesParam(
+                it,
+                loadCount
+            ))
                 .onEach { result ->
                     when (result) {
                         is ResultModel.Success -> {
+                            val messages = currentState.messages.toMutableList()
+                            Log.d("TAG", "getMessages: ${result.result.size}")
+                            messages.addAll(0, result.result.sortedBy { message ->
+                                message.timeSent
+                            })
                             setState(
                                 currentState.copy(
-                                    messages = result.result.sortedBy { message ->
-                                        message.timeSent
-                                    },
+                                    messages = messages,
                                     textMessage = "",
                                     error = null
                                 )
@@ -168,6 +175,7 @@ class ChatViewModel @Inject constructor(
             }
 
             is ViewEvent.Send -> sendMessage(event.message)
+            is ViewEvent.LoadMoreMessages -> getMessages(event.loadCount)
         }
     }
 
@@ -244,7 +252,7 @@ class ChatViewModel @Inject constructor(
                 }
                 .launchIn(coroutineScope)
         } else {
-            getMessages()
+            getMessages(0)
         }
     }
 
@@ -309,7 +317,7 @@ class ChatViewModel @Inject constructor(
                 .onEach { result ->
                     when (result) {
                         is ResultModel.Success -> {
-                            getMessages()
+                            //getMessages()
                         }
 
                         is ResultModel.Error -> {
@@ -333,6 +341,7 @@ class ChatViewModel @Inject constructor(
     sealed interface ViewEvent : BaseViewEvent {
         data class OnTextChanged(val text: String) : ViewEvent
         data class Send(val message: String) : ViewEvent
+        data class LoadMoreMessages(val loadCount: Int) : ViewEvent
     }
 
     class ViewEffect : BaseViewEffect

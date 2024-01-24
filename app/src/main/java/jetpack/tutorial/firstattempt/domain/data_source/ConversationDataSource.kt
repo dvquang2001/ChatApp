@@ -5,6 +5,7 @@ import jetpack.tutorial.firstattempt.domain.model.main.ConversationModel
 import jetpack.tutorial.firstattempt.domain.model.main.MessageModel
 import jetpack.tutorial.firstattempt.domain.model.main.UserModel
 import jetpack.tutorial.firstattempt.domain.usecase.main.check_users_pair.UserParam
+import jetpack.tutorial.firstattempt.domain.usecase.main.get_all_messages.GetAllMessagesParam
 import jetpack.tutorial.firstattempt.domain.usecase.main.get_users.GetUsersParam
 import jetpack.tutorial.firstattempt.domain.usecase.main.update_message.MessageParam
 import jetpack.tutorial.firstattempt.domain.usecase.main.update_conversation.ConversationParam
@@ -26,7 +27,7 @@ interface ConversationDataSource {
 
     fun getConversation(param: String): Flow<ResultModel<ConversationModel>>
 
-    fun getAllMessages(conversationId: String): Flow<ResultModel<List<MessageModel>>>
+    fun getAllMessages(param: GetAllMessagesParam): Flow<ResultModel<List<MessageModel>>>
 
     fun getMessage(messageParam: MessageParam): Flow<ResultModel<MessageModel>>
 

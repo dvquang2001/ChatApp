@@ -11,7 +11,7 @@ class GetAllMessagesUseCaseImpl @Inject constructor(
     private val dataSource: ConversationDataSource
 ) : GetAllMessagesUseCase{
 
-    override fun execute(param: String): Flow<ResultModel<List<MessageModel>>> {
+    override fun execute(param: GetAllMessagesParam): Flow<ResultModel<List<MessageModel>>> {
         return dataSource.getAllMessages(param).map {
             when(it) {
                 is ResultModel.Success -> {

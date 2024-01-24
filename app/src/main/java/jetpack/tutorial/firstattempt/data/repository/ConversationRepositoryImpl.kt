@@ -3,6 +3,7 @@ package jetpack.tutorial.firstattempt.data.repository
 import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.Query
 import com.google.firebase.firestore.toObject
 import jetpack.tutorial.firstattempt.core.ResultModel
 import jetpack.tutorial.firstattempt.data.dto.main.FireStoreConversationDto
@@ -16,6 +17,7 @@ import jetpack.tutorial.firstattempt.domain.model.main.ConversationModel
 import jetpack.tutorial.firstattempt.domain.model.main.MessageModel
 import jetpack.tutorial.firstattempt.domain.model.main.UserModel
 import jetpack.tutorial.firstattempt.domain.usecase.main.check_users_pair.UserParam
+import jetpack.tutorial.firstattempt.domain.usecase.main.get_all_messages.GetAllMessagesParam
 import jetpack.tutorial.firstattempt.domain.usecase.main.get_users.GetUsersParam
 import jetpack.tutorial.firstattempt.domain.usecase.main.update_conversation.ConversationParam
 import jetpack.tutorial.firstattempt.domain.usecase.main.update_message.MessageParam
@@ -272,31 +274,67 @@ class ConversationRepositoryImpl @Inject constructor(
         }
     }
 
-    override fun getAllMessages(conversationId: String): Flow<ResultModel<List<MessageModel>>> {
+    override fun getAllMessages(param: GetAllMessagesParam): Flow<ResultModel<List<MessageModel>>> {
         return callbackFlow {
-            val querySnapshot = db
-                .collection(Constant.CONVERSATION_COLLECTION)
-                .document(conversationId)
+            val needToLoad = if(param.loadCount == 0) 1 else param.loadCount * 20 - 1
+            val pagingMessages = db.collection(Constant.CONVERSATION_COLLECTION)
+                .document(param.conversationId)
                 .collection(Constant.MESSAGE_COLLECTION)
-                .addSnapshotListener { snapshot, e ->
-                    if(snapshot != null) {
+                .orderBy(Constant.TIME_SENT, Query.Direction.DESCENDING)
+                .limit(needToLoad.toLong())
+
+            pagingMessages
+                .get()
+                .addOnSuccessListener { snapshot ->
+                    val lastVisible = snapshot.documents[snapshot.size() - 1]
+
+                    val next = db.collection(Constant.CONVERSATION_COLLECTION)
+                        .document(param.conversationId)
+                        .collection(Constant.MESSAGE_COLLECTION)
+                        .orderBy(Constant.TIME_SENT, Query.Direction.DESCENDING)
+                        .startAfter(lastVisible)
+                        .limit(20)
+
+                    next.get().addOnSuccessListener { it1 ->
+                        Log.d("TAG", "getAllMessages: ${it1.documents.size}")
                         val messages = mutableListOf<MessageDto>()
-                        for (document in snapshot.documents) {
+                        for (document in it1.documents) {
                             val messageDto = document.toObject<MessageDto>()
                             messageDto?.let {
                                 messages.add(messageDto)
                             }
                         }
+                        Log.d("TAG-123", "getAllMessages: ${messages.size}")
                         trySend(ResultModel.Success(messages.map { dto ->
                             dto.toModel()
                         }))
                     }
-                    if(e != null) {
-                        e.printStackTrace()
-                        trySend(ResultModel.Error(e))
-                        close(e)
-                    }
                 }
+//            val querySnapshot = db
+//                .collection(Constant.CONVERSATION_COLLECTION)
+//                .document(conversationId)
+//                .collection(Constant.MESSAGE_COLLECTION)
+//                .addSnapshotListener { snapshot, e ->
+//                    if(snapshot != null) {
+//                        Log.d("TAG-123", "getAllMessages: notify")
+//                        val messages = mutableListOf<MessageDto>()
+//                        Log.d("TAG-123", "getAllMessages: ${snapshot.documentChanges.size}")
+//                        for (document in snapshot.documents) {
+//                            val messageDto = document.toObject<MessageDto>()
+//                            messageDto?.let {
+//                                messages.add(messageDto)
+//                            }
+//                        }
+//                        trySend(ResultModel.Success(messages.map { dto ->
+//                            dto.toModel()
+//                        }))
+//                    }
+//                    if(e != null) {
+//                        e.printStackTrace()
+//                        trySend(ResultModel.Error(e))
+//                        close(e)
+//                    }
+//                }
             awaitClose()
         }
     }

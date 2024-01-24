@@ -53,6 +53,9 @@ fun ChatScreen(
                     users = state.users,
                     currentUser = user,
                     messages = state.messages,
+                    onLoadMoreMessages = {
+                        viewModel.onEvent(ChatViewModel.ViewEvent.LoadMoreMessages(it))
+                    },
                     modifier = Modifier
                         .weight(1f)
                 )
