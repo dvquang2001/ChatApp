@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "755758254772",
+    "project_id": "chat-attempt-3f02a",
+    "storage_bucket": "chat-attempt-3f02a.appspot.com"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:755758254772:android:049556be0b1393420525e1",
+        "android_client_info": {
+          "package_name": "jetpack.tutorial.firstattempt"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC9rHp9HE5_jn4UXrhD2ZnZ7B5Ks_CbVKY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
