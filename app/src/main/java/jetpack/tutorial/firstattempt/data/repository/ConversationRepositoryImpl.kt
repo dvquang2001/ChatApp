@@ -1,8 +1,8 @@
 package jetpack.tutorial.firstattempt.data.repository
 
+import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
-import com.google.firebase.firestore.QuerySnapshot
 import com.google.firebase.firestore.toObject
 import jetpack.tutorial.firstattempt.core.ResultModel
 import jetpack.tutorial.firstattempt.data.dto.main.FireStoreConversationDto
@@ -29,33 +29,51 @@ import javax.inject.Inject
 class ConversationRepositoryImpl @Inject constructor(
     private val db: FirebaseFirestore,
     private val auth: FirebaseAuth
-) : ConversationDataSource{
+) : ConversationDataSource {
 
     override fun getAllUsers(param: GetUsersParam): Flow<ResultModel<List<UserModel>>> {
-        return flow {
-            val result = try {
-                val querySnapshot: QuerySnapshot
-                if(param.userIds.isEmpty()) {
-                    querySnapshot = db.collection(Constant.USER_COLLECTION).get().await()
-                } else {
-                    querySnapshot = db.collection(Constant.CONVERSATION_COLLECTION)
-                        .whereArrayContains(Constant.USERS_FIELD, param.userIds)
-                        .get()
-                        .await()
-                }
-                val users = mutableListOf<UserModel>()
-                for (document in querySnapshot.documents) {
-                    val user = document.toObject<FireStoreUserDto>()
-                    user?.let {
-                        users.add(user.toModel())
+        return callbackFlow {
+            if (param.userIds.isEmpty()) {
+                db.collection(Constant.USER_COLLECTION)
+                    .addSnapshotListener { querySnapshot, error ->
+                        if (querySnapshot != null) {
+                            val users = mutableListOf<UserModel>()
+                            for (document in querySnapshot.documents) {
+                                val user = document.toObject<FireStoreUserDto>()
+                                user?.let {
+                                    users.add(user.toModel())
+                                }
+                            }
+                            trySend(ResultModel.Success(users))
+                        }
+                        if (error != null) {
+                            error.printStackTrace()
+                            trySend(ResultModel.Error(error))
+                            close(error)
+                        }
                     }
-                }
-                ResultModel.Success(users)
-            } catch (t: Throwable) {
-                t.printStackTrace()
-                ResultModel.Error(t)
+            } else {
+                db.collection(Constant.USER_COLLECTION)
+                    .whereArrayContains(Constant.USERS_FIELD, param.userIds)
+                    .addSnapshotListener { querySnapshot, error ->
+                        if (querySnapshot != null) {
+                            val users = mutableListOf<UserModel>()
+                            for (document in querySnapshot.documents) {
+                                val user = document.toObject<FireStoreUserDto>()
+                                user?.let {
+                                    users.add(user.toModel())
+                                }
+                            }
+                            trySend(ResultModel.Success(users))
+                        }
+                        if (error != null) {
+                            error.printStackTrace()
+                            trySend(ResultModel.Error(error))
+                            close(error)
+                        }
+                    }
             }
-            emit(result)
+            awaitClose()
         }
     }
 
@@ -100,12 +118,12 @@ class ConversationRepositoryImpl @Inject constructor(
 
     override fun updateConversation(param: ConversationParam): Flow<ResultModel<ConversationModel>> {
         val conversationDto = FireStoreConversationDto(
-                    id = param.id,
-                    lastMessage = param.lastMessage,
-                    users = param.users
-                )
+            id = param.id,
+            lastMessage = param.lastMessage,
+            users = param.users
+        )
 
-        val addDocumentFlow : Flow<String>
+        val addDocumentFlow: Flow<String>
         if (param.id == null) {
             addDocumentFlow = callbackFlow {
                 val documentReference = db.collection(Constant.CONVERSATION_COLLECTION)
@@ -144,13 +162,14 @@ class ConversationRepositoryImpl @Inject constructor(
                     .addOnFailureListener { e ->
                         e.printStackTrace()
                         trySend(ResultModel.Error(e))
+                        close(e)
                     }
             }
         }
     }
 
 
-    override fun updateMessage(messageParam: MessageParam): Flow<ResultModel<MessageModel>>{
+    override fun updateMessage(messageParam: MessageParam): Flow<ResultModel<MessageModel>> {
         val messageDto = messageParam.toDto()
         val addDocumentFlow = callbackFlow {
             val documentReference = db
@@ -185,6 +204,7 @@ class ConversationRepositoryImpl @Inject constructor(
                     .addOnFailureListener { e ->
                         e.printStackTrace()
                         trySend(ResultModel.Error(e))
+                        close(e)
                     }
             }
         }
@@ -203,75 +223,82 @@ class ConversationRepositoryImpl @Inject constructor(
         }
     }
 
-    private suspend fun getConversationFromFirebase(conversationId: String) : ConversationModel?{
-        val querySnapshot = db
-            .collection(Constant.CONVERSATION_COLLECTION)
-            .whereEqualTo(Constant.ID_FIELD, conversationId)
-            .get()
-            .await()
-        val doc = querySnapshot.documents.first()
-        val conversationDto = doc.toObject<FireStoreConversationDto>()
-        return conversationDto?.toModel(
-            messages = getAllMessageFromFirebase(conversationId).sortedBy {
-                it.timeSent
-            }
-        )
-    }
-
-    private suspend fun getAllMessageFromFirebase(conversationId: String): List<MessageDto> {
-        val querySnapshot = db
-            .collection(Constant.CONVERSATION_COLLECTION)
-            .document(conversationId)
-            .collection(Constant.MESSAGE_COLLECTION)
-            .get()
-            .await()
-        val messages = mutableListOf<MessageDto>()
-        for(document in querySnapshot.documents) {
-            val messageDto = document.toObject<MessageDto>()
-            messageDto?.let {
-                messages.add(messageDto)
-            }
-        }
-        return messages
-    }
-
     override fun getConversation(param: String): Flow<ResultModel<ConversationModel>> {
-        return flow {
-            val result = try {
-                val querySnapshot = db
-                    .collection(Constant.CONVERSATION_COLLECTION)
+        val getMessageFlow = callbackFlow {
+            val messages = mutableListOf<MessageDto>()
+            val querySnapshot = db
+                .collection(Constant.CONVERSATION_COLLECTION)
+                .document(param)
+                .collection(Constant.MESSAGE_COLLECTION)
+                .get()
+                .addOnSuccessListener {
+                    for (document in it.documents) {
+                        val messageDto = document.toObject<MessageDto>()
+                        messageDto?.let {
+                            messages.add(messageDto)
+                        }
+                        trySend(messages)
+                    }
+                }
+                .addOnFailureListener { e ->
+                    e.printStackTrace()
+                    close(e)
+                }
+            awaitClose()
+        }
+        return callbackFlow {
+            getMessageFlow.collect { messages ->
+                db.collection(Constant.CONVERSATION_COLLECTION)
                     .whereEqualTo(Constant.ID_FIELD, param)
                     .get()
-                    .await()
-                val doc = querySnapshot.documents.first()
-                val conversationDto = doc.toObject<FireStoreConversationDto>()
-                val conversation =  conversationDto?.toModel(
-                    messages = getAllMessageFromFirebase(param).sortedBy {
-                        it.timeSent
+                    .addOnSuccessListener {
+                        val doc = it.documents.first()
+                        val conversationDto = doc.toObject<FireStoreConversationDto>()
+                        val conversation = conversationDto?.toModel(
+                            messages = messages.sortedBy { dto ->
+                                dto.timeSent
+                            }
+                        )
+                        val result = ResultModel.Success(conversation!!)
+                        trySend(result)
                     }
-                )
-                ResultModel.Success(conversation!!)
-            } catch (t: Throwable) {
-                t.printStackTrace()
-                ResultModel.Error(t)
+                    .addOnFailureListener { t ->
+                        t.printStackTrace()
+                        val result = ResultModel.Error(t)
+                        trySend(result)
+                    }
             }
-            emit(result)
+            awaitClose()
         }
     }
 
     override fun getAllMessages(conversationId: String): Flow<ResultModel<List<MessageModel>>> {
-       return flow {
-           val result = try {
-              val messages = getAllMessageFromFirebase(conversationId).map {
-                  it.toModel()
-              }
-               ResultModel.Success(messages)
-           } catch (t: Throwable) {
-               t.printStackTrace()
-               ResultModel.Error(t)
-           }
-           emit(result)
-       }
+        return callbackFlow {
+            val querySnapshot = db
+                .collection(Constant.CONVERSATION_COLLECTION)
+                .document(conversationId)
+                .collection(Constant.MESSAGE_COLLECTION)
+                .addSnapshotListener { snapshot, e ->
+                    if(snapshot != null) {
+                        val messages = mutableListOf<MessageDto>()
+                        for (document in snapshot.documents) {
+                            val messageDto = document.toObject<MessageDto>()
+                            messageDto?.let {
+                                messages.add(messageDto)
+                            }
+                        }
+                        trySend(ResultModel.Success(messages.map { dto ->
+                            dto.toModel()
+                        }))
+                    }
+                    if(e != null) {
+                        e.printStackTrace()
+                        trySend(ResultModel.Error(e))
+                        close(e)
+                    }
+                }
+            awaitClose()
+        }
     }
 
     override fun getMessage(messageParam: MessageParam): Flow<ResultModel<MessageModel>> {
@@ -307,7 +334,7 @@ class ConversationRepositoryImpl @Inject constructor(
                             && it.users.contains(userParam1.id)
                             && it.users.contains(userParam2.id)
                 }
-                if(isUsersAlreadyPair != null) {
+                if (isUsersAlreadyPair != null) {
                     ResultModel.Success(isUsersAlreadyPair)
                 } else {
                     ResultModel.Error(t = Throwable("Users not pair"))

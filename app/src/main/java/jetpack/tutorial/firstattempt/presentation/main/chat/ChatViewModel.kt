@@ -25,6 +25,8 @@ import jetpack.tutorial.firstattempt.domain.usecase.main.update_conversation.Upd
 import jetpack.tutorial.firstattempt.domain.usecase.main.update_message.MessageParam
 import jetpack.tutorial.firstattempt.domain.usecase.main.update_message.UpdateMessageUseCase
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import javax.inject.Inject
@@ -179,6 +181,7 @@ class ChatViewModel @Inject constructor(
             .onEach {
                 when (it) {
                     is ResultModel.Success -> {
+                        Log.d("TAG", "checkUsersPair: ${it.result.users}")
                         isUsersPaired = true
                         conversationId = it.result.id
                         setState(
@@ -203,6 +206,7 @@ class ChatViewModel @Inject constructor(
     }
 
     private fun joinConversation(user: UserModel) {
+        Log.d("TAG", "joinConversation: $isUsersPaired")
         if (!isUsersPaired) {
             val currentUser = currentState.currentUser
             val param = ConversationParam(
@@ -266,6 +270,7 @@ class ChatViewModel @Inject constructor(
             .onEach {
                 when (it) {
                     is ResultModel.Success -> {
+                        Log.d("TAG", "getUsersInRoom: ${it.result.name}")
                         newUsers.add(it.result)
                         setState(
                             currentState.copy(
@@ -273,7 +278,9 @@ class ChatViewModel @Inject constructor(
                                 error = null
                             )
                         )
-                        checkUsersPair(currentState.users[0])
+                        if(newUsers.isNotEmpty()) {
+                            checkUsersPair(newUsers[0])
+                        }
                     }
 
                     is ResultModel.Error -> {

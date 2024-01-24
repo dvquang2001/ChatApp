@@ -24,7 +24,7 @@ abstract class BaseViewModel<ViewState: BaseViewState, ViewEvent: BaseViewEvent,
     private val _coroutineScope = CoroutineScope(Dispatchers.IO)
 
     protected open val exceptionHandler = CoroutineExceptionHandler { context, throwable ->
-        Log.e("BaseViewModel", "$context at $this get error: $throwable")
+        Log.e("BaseViewModel", "$context at $this get error: ${throwable.message}")
     }
 
     protected val coroutineScope: CoroutineScope by lazy {
