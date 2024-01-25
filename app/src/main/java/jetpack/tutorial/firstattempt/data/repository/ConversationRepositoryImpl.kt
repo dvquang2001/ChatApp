@@ -1,5 +1,6 @@
 package jetpack.tutorial.firstattempt.data.repository
 
+import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
@@ -17,6 +18,7 @@ import jetpack.tutorial.firstattempt.domain.model.main.MessageModel
 import jetpack.tutorial.firstattempt.domain.model.main.UserModel
 import jetpack.tutorial.firstattempt.domain.usecase.main.check_users_pair.UserParam
 import jetpack.tutorial.firstattempt.domain.usecase.main.get_all_messages.GetAllMessagesParam
+import jetpack.tutorial.firstattempt.domain.usecase.main.get_message.GetMessageParam
 import jetpack.tutorial.firstattempt.domain.usecase.main.get_users.GetUsersParam
 import jetpack.tutorial.firstattempt.domain.usecase.main.update_conversation.ConversationParam
 import jetpack.tutorial.firstattempt.domain.usecase.main.update_message.MessageParam
@@ -129,7 +131,7 @@ class ConversationRepositoryImpl @Inject constructor(
         val addDocumentFlow: Flow<String>
         if (param.id == null) {
             addDocumentFlow = callbackFlow {
-                val documentReference = db.collection(Constant.CONVERSATION_COLLECTION)
+                db.collection(Constant.CONVERSATION_COLLECTION)
                     .add(conversationDto)
                     .addOnSuccessListener { reference ->
                         val documentId = reference.id
@@ -175,8 +177,7 @@ class ConversationRepositoryImpl @Inject constructor(
     override fun updateMessage(messageParam: MessageParam): Flow<ResultModel<MessageModel>> {
         val messageDto = messageParam.toDto()
         val addDocumentFlow = callbackFlow {
-            val documentReference = db
-                .collection(Constant.CONVERSATION_COLLECTION)
+            db.collection(Constant.CONVERSATION_COLLECTION)
                 .document(messageParam.conversationId!!)
                 .collection(Constant.MESSAGE_COLLECTION)
                 .add(messageDto)
@@ -229,8 +230,7 @@ class ConversationRepositoryImpl @Inject constructor(
     override fun getConversation(param: String): Flow<ResultModel<ConversationModel>> {
         val getMessageFlow = callbackFlow {
             val messages = mutableListOf<MessageDto>()
-            val querySnapshot = db
-                .collection(Constant.CONVERSATION_COLLECTION)
+            db.collection(Constant.CONVERSATION_COLLECTION)
                 .document(param)
                 .collection(Constant.MESSAGE_COLLECTION)
                 .get()
@@ -321,24 +321,30 @@ class ConversationRepositoryImpl @Inject constructor(
         }
     }
 
-    override fun getMessage(messageParam: MessageParam): Flow<ResultModel<MessageModel>> {
-        return flow {
-            val result = try {
-                val querySnapshot = db
-                    .collection(Constant.CONVERSATION_COLLECTION)
-                    .document(messageParam.conversationId!!)
-                    .collection(Constant.MESSAGE_COLLECTION)
-                    .whereEqualTo(Constant.ID_FIELD, messageParam.id!!)
-                    .get()
-                    .await()
-                val doc = querySnapshot.documents.first()
-                val messageDto = doc.toObject<MessageDto>()
-                ResultModel.Success(messageDto!!.toModel())
-            } catch (t: Throwable) {
-                t.printStackTrace()
-                ResultModel.Error(t)
-            }
-            emit(result)
+    override fun getMessage(param: GetMessageParam): Flow<ResultModel<MessageModel>> {
+        return callbackFlow {
+            db.collection(Constant.CONVERSATION_COLLECTION)
+                .document(param.conversationId)
+                .collection(Constant.MESSAGE_COLLECTION)
+                .orderBy(Constant.TIME_SENT, Query.Direction.DESCENDING)
+                .limit(1)
+                .addSnapshotListener { snapshot, error ->
+                    if (error != null) {
+                        error.printStackTrace()
+                        trySend(ResultModel.Error(error))
+                        return@addSnapshotListener
+                    }
+
+                    if (snapshot != null) {
+                        val doc = snapshot.documents.first()
+                        val messageDto = doc.toObject<MessageDto>()
+                        val model = messageDto!!.toModel()
+                        if(model.id.isNotEmpty()) {
+                            trySend(ResultModel.Success(messageDto.toModel()))
+                        }
+                    }
+                }
+            awaitClose()
         }
     }
 
@@ -381,4 +387,6 @@ class ConversationRepositoryImpl @Inject constructor(
         }
         return conversations
     }
+
+
 }

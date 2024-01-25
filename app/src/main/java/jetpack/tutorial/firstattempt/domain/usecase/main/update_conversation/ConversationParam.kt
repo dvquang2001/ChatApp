@@ -6,8 +6,9 @@ import jetpack.tutorial.firstattempt.domain.usecase.main.update_message.MessageP
 data class ConversationParam(
     val id: String? = null,
     val title: String? = null,
-    val messages: List<MessageParam>,
+    val messages: List<MessageParam> = listOf(),
     val lastMessage: String? = null,
     val lastMessageTime: Timestamp = Timestamp.now(),
-    val users: List<String> = listOf()
+    val users: List<String> = listOf(),
+    val conversationId: String? = null
 )

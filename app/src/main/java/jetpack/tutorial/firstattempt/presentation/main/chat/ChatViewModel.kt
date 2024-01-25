@@ -18,6 +18,8 @@ import jetpack.tutorial.firstattempt.domain.usecase.main.get_all_messages.GetAll
 import jetpack.tutorial.firstattempt.domain.usecase.main.get_all_messages.GetAllMessagesUseCase
 import jetpack.tutorial.firstattempt.domain.usecase.main.get_conversation.GetConversationUseCase
 import jetpack.tutorial.firstattempt.domain.usecase.main.get_current_user.GetCurrentUserUseCase
+import jetpack.tutorial.firstattempt.domain.usecase.main.get_message.GetMessageParam
+import jetpack.tutorial.firstattempt.domain.usecase.main.get_message.GetMessageUseCase
 import jetpack.tutorial.firstattempt.domain.usecase.main.get_user.GetUserUseCase
 import jetpack.tutorial.firstattempt.domain.usecase.main.get_users.GetAllUserUseCase
 import jetpack.tutorial.firstattempt.domain.usecase.main.get_users.GetUsersParam
@@ -41,6 +43,8 @@ class ChatViewModel @Inject constructor(
     private val updateMessageUseCase: UpdateMessageUseCase,
     private val getAllMessagesUseCase: GetAllMessagesUseCase,
     private val getConversationUseCase: GetConversationUseCase,
+    private val getMessageUseCase: GetMessageUseCase,
+
 ) : BaseViewModel<ChatViewModel.ViewState, ChatViewModel.ViewEvent, ChatViewModel.ViewEffect>(
     ViewState()
 ) {
@@ -52,10 +56,12 @@ class ChatViewModel @Inject constructor(
     private var sendMessageJob: Job? = null
     private var getMessagesJob: Job? = null
     private var getConversationJob: Job? = null
-
+    private var getMessageJob: Job? = null
+    private var updateConversationJob: Job? = null
 
     private var conversationId: String? = null
     private var isUsersPaired: Boolean = false
+    private var conversation: ConversationModel? = null
 
     init {
         val userId = savedStateHandle.get<String>("userId")
@@ -83,9 +89,9 @@ class ChatViewModel @Inject constructor(
                                 error = null
                             )
                         )
-                        val conversation = it.result
+                        conversation = it.result
                         getCurrentUser()
-                        getUsersInRoom(userIds = conversation.users)
+                        getUsersInRoom(userIds = conversation!!.users)
                         getMessages()
                     }
 
@@ -177,7 +183,7 @@ class ChatViewModel @Inject constructor(
             }
 
             is ViewEvent.Send -> sendMessage(event.message)
-            is ViewEvent.LoadMoreMessages -> getMessages()
+            is ViewEvent.LoadMoreMessages -> {} //getMessages()
         }
     }
 
@@ -232,9 +238,7 @@ class ChatViewModel @Inject constructor(
                         is ResultModel.Success -> {
                             setState(
                                 currentState.copy(
-                                    messages = it.result.messages.sortedBy { message ->
-                                        message.timeSent
-                                    },
+                                    messages = it.result.messages,
                                     error = null
                                 )
                             )
@@ -261,6 +265,7 @@ class ChatViewModel @Inject constructor(
         getCurrentUserJob = getCurrentUserUseCase.execute(Any())
             .onEach {
                 if (it is ResultModel.Success) {
+                    getMessage()
                     setState(
                         currentState.copy(
                             currentUser = it.result
@@ -316,7 +321,17 @@ class ChatViewModel @Inject constructor(
                 .onEach { result ->
                     when (result) {
                         is ResultModel.Success -> {
-                            //getMessages()
+                            val messageModel = result.result
+                            updateConversation(
+                                conversationId = conversationId!!,
+                                messageModel = messageModel
+                            )
+                            setState(
+                                currentState.copy(
+                                    textMessage = "",
+                                    error = null
+                                )
+                            )
                         }
 
                         is ResultModel.Error -> {
@@ -326,6 +341,58 @@ class ChatViewModel @Inject constructor(
                 }
                 .launchIn(coroutineScope)
         }
+    }
+
+    private fun updateConversation(conversationId: String, messageModel: MessageModel) {
+        updateConversationJob?.cancel()
+        updateConversationJob = updateConversationUseCase.execute(
+            ConversationParam(
+                lastMessage = messageModel.content,
+                conversationId = conversationId
+            )
+        )
+            .onEach {
+                when(it) {
+                    is ResultModel.Success -> {
+                        getMessage(messageModel)
+                    }
+
+                    is ResultModel.Error -> {
+                        Log.d("TAG", "updateConversation: ${it.t.message}")
+                    }
+                }
+            }
+            .launchIn(coroutineScope)
+    }
+
+    private fun getMessage(messageModel: MessageModel? = null) {
+        getMessageJob?.cancel()
+        getMessageJob = getMessageUseCase.execute(
+            GetMessageParam(
+                id = messageModel?.id,
+                conversationId = conversationId ?: return
+            )
+        )
+            .onEach {
+                when(it) {
+                    is ResultModel.Success -> {
+                        val newMessages = currentState.messages.toMutableList()
+                        if(!newMessages.map { it.id }.contains(it.result.id) && it.result.id.isNotEmpty()) {
+                            newMessages.add(0,it.result)
+                        }
+                        setState(
+                            currentState.copy(
+                                messages = newMessages
+                            )
+                        )
+                    }
+
+                    is ResultModel.Error -> {
+
+                    }
+                }
+            }
+            .launchIn(coroutineScope)
     }
 
     data class ViewState(
@@ -356,5 +423,6 @@ class ChatViewModel @Inject constructor(
         sendMessageJob?.cancel()
         getMessagesJob?.cancel()
         getConversationJob?.cancel()
+        getMessagesJob?.cancel()
     }
 }
