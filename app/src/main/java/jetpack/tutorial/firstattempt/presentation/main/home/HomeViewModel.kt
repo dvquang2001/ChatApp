@@ -37,8 +37,6 @@ class HomeViewModel @Inject constructor(
 
     init {
         getCurrentUser()
-        getUsers()
-
     }
 
     private fun getAllConversation(userId: String) {
@@ -93,6 +91,7 @@ class HomeViewModel @Inject constructor(
                             currentUser = it.result
                         )
                     )
+                    getUsers()
                     getAllConversation(it.result.id)
                 }
             }

@@ -1,6 +1,5 @@
 package jetpack.tutorial.firstattempt.data.repository
 
-import android.util.Log
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.firestore.FirebaseFirestore
 import com.google.firebase.firestore.Query
@@ -34,8 +33,8 @@ class ConversationRepositoryImpl @Inject constructor(
 ) : ConversationDataSource {
 
     override fun getAllUsers(param: GetUsersParam): Flow<ResultModel<List<UserModel>>> {
-        return callbackFlow {
-            if (param.userIds.isEmpty()) {
+        if (param.userIds.isEmpty()) {
+            return callbackFlow {
                 db.collection(Constant.USER_COLLECTION)
                     .addSnapshotListener { querySnapshot, error ->
                         if (querySnapshot != null) {
@@ -54,28 +53,30 @@ class ConversationRepositoryImpl @Inject constructor(
                             close(error)
                         }
                     }
-            } else {
-                db.collection(Constant.USER_COLLECTION)
-                    .whereArrayContains(Constant.USERS_FIELD, param.userIds)
-                    .addSnapshotListener { querySnapshot, error ->
-                        if (querySnapshot != null) {
-                            val users = mutableListOf<UserModel>()
-                            for (document in querySnapshot.documents) {
-                                val user = document.toObject<FireStoreUserDto>()
-                                user?.let {
-                                    users.add(user.toModel())
-                                }
-                            }
-                            trySend(ResultModel.Success(users))
-                        }
-                        if (error != null) {
-                            error.printStackTrace()
-                            trySend(ResultModel.Error(error))
-                            close(error)
-                        }
-                    }
+                awaitClose()
             }
-            awaitClose()
+        } else {
+            return flow {
+                try {
+                    val users = mutableListOf<UserModel>()
+                    for (userId in param.userIds) {
+                        val querySnapshot = db
+                            .collection(Constant.USER_COLLECTION)
+                            .whereEqualTo(Constant.ID_FIELD, userId)
+                            .get()
+                            .await()
+                        val doc = querySnapshot.documents.first()
+                        val userDto = doc.toObject<FireStoreUserDto>()
+                        userDto?.let {
+                            users.add(userDto.toModel())
+                        }
+                    }
+                    emit(ResultModel.Success(users))
+                } catch (t: Throwable) {
+                    t.printStackTrace()
+                    emit(ResultModel.Error(t))
+                }
+            }
         }
     }
 
@@ -276,7 +277,7 @@ class ConversationRepositoryImpl @Inject constructor(
 
     override fun getAllMessages(param: GetAllMessagesParam): Flow<ResultModel<List<MessageModel>>> {
         return callbackFlow {
-            val needToLoad = if(param.loadCount == 0) 1 else param.loadCount * 20 - 1
+            val needToLoad = if (param.loadCount == 0) 1 else param.loadCount * 20 - 1
             val pagingMessages = db.collection(Constant.CONVERSATION_COLLECTION)
                 .document(param.conversationId)
                 .collection(Constant.MESSAGE_COLLECTION)
@@ -295,46 +296,27 @@ class ConversationRepositoryImpl @Inject constructor(
                         .startAfter(lastVisible)
                         .limit(20)
 
-                    next.get().addOnSuccessListener { it1 ->
-                        Log.d("TAG", "getAllMessages: ${it1.documents.size}")
+                    next.get().addOnSuccessListener { nextSnapshot ->
                         val messages = mutableListOf<MessageDto>()
-                        for (document in it1.documents) {
+                        if (param.loadCount == 0) {
+                            for (document in snapshot.documents) {
+                                val messageDto = document.toObject<MessageDto>()
+                                messageDto?.let {
+                                    messages.add(messageDto)
+                                }
+                            }
+                        }
+                        for (document in nextSnapshot.documents) {
                             val messageDto = document.toObject<MessageDto>()
                             messageDto?.let {
                                 messages.add(messageDto)
                             }
                         }
-                        Log.d("TAG-123", "getAllMessages: ${messages.size}")
                         trySend(ResultModel.Success(messages.map { dto ->
                             dto.toModel()
                         }))
                     }
                 }
-//            val querySnapshot = db
-//                .collection(Constant.CONVERSATION_COLLECTION)
-//                .document(conversationId)
-//                .collection(Constant.MESSAGE_COLLECTION)
-//                .addSnapshotListener { snapshot, e ->
-//                    if(snapshot != null) {
-//                        Log.d("TAG-123", "getAllMessages: notify")
-//                        val messages = mutableListOf<MessageDto>()
-//                        Log.d("TAG-123", "getAllMessages: ${snapshot.documentChanges.size}")
-//                        for (document in snapshot.documents) {
-//                            val messageDto = document.toObject<MessageDto>()
-//                            messageDto?.let {
-//                                messages.add(messageDto)
-//                            }
-//                        }
-//                        trySend(ResultModel.Success(messages.map { dto ->
-//                            dto.toModel()
-//                        }))
-//                    }
-//                    if(e != null) {
-//                        e.printStackTrace()
-//                        trySend(ResultModel.Error(e))
-//                        close(e)
-//                    }
-//                }
             awaitClose()
         }
     }

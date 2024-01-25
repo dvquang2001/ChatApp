@@ -6,53 +6,30 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import jetpack.tutorial.firstattempt.domain.model.main.MessageModel
 import jetpack.tutorial.firstattempt.domain.model.main.UserModel
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.launch
-import kotlin.math.log
 
 @Composable
 fun ChatContent(
-    onLoadMoreMessages: (loadCount: Int) -> Unit,
+    onLoadMoreMessages: () -> Unit,
     users: List<UserModel>,
     currentUser: UserModel,
     messages: List<MessageModel>,
     modifier: Modifier = Modifier,
 ) {
     val lazyListState = rememberLazyListState()
-    val coroutineScope = rememberCoroutineScope()
-    var count by remember {
-        mutableIntStateOf(0)
-    }
+    val isAtBottom = lazyListState.canScrollForward
     if(messages.isNotEmpty()) {
-        LaunchedEffect(messages.size) {
-            if(count == 0) {
-                coroutineScope.launch {
-                    lazyListState.animateScrollToItem(messages.size - 1)
-                }
+        LaunchedEffect(isAtBottom) {
+            if(isAtBottom) {
+                Log.d("TAG-BOOL", "ChatContent: loadmore")
+                onLoadMoreMessages()
             }
-        }
-        LaunchedEffect(lazyListState) {
-            snapshotFlow { lazyListState.firstVisibleItemIndex }
-                .collectLatest { index ->
-                    if(index == 0) {
-                        if(count > 0) {
-                            onLoadMoreMessages(count)
-                        }
-                        count++
-                    }
-                }
         }
     }
     LazyColumn(
+        reverseLayout = true,
         state = lazyListState,
         modifier = modifier
     ) {

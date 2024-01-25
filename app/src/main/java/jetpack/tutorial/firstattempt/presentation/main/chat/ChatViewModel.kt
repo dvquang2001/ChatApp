@@ -26,12 +26,9 @@ import jetpack.tutorial.firstattempt.domain.usecase.main.update_conversation.Upd
 import jetpack.tutorial.firstattempt.domain.usecase.main.update_message.MessageParam
 import jetpack.tutorial.firstattempt.domain.usecase.main.update_message.UpdateMessageUseCase
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import javax.inject.Inject
-import kotlin.math.log
 
 @HiltViewModel
 class ChatViewModel @Inject constructor(
@@ -62,23 +59,24 @@ class ChatViewModel @Inject constructor(
 
     init {
         val userId = savedStateHandle.get<String>("userId")
-        Log.d("TAG", "UserDI: $userId")
-        if(userId != null) {
+        if (userId != null) {
             getUsersInRoom(userId)
             getCurrentUser()
-        } else {
-            conversationId = savedStateHandle.get<String>("conversationId")
-            getCurrentUser()
+        }
+
+        conversationId = savedStateHandle.get<String>("conversationId")
+        if (conversationId != null) {
+            Log.d("TAG-ne", "UserDI: $conversationId")
             getConversation()
         }
     }
 
     private fun getConversation() {
-        if(conversationId == null) return
+        if (conversationId == null) return
         getConversationJob?.cancel()
         getConversationJob = getConversationUseCase.execute(conversationId!!)
             .onEach {
-                when(it) {
+                when (it) {
                     is ResultModel.Success -> {
                         setState(
                             currentState.copy(
@@ -86,7 +84,9 @@ class ChatViewModel @Inject constructor(
                             )
                         )
                         val conversation = it.result
+                        getCurrentUser()
                         getUsersInRoom(userIds = conversation.users)
+                        getMessages()
                     }
 
                     is ResultModel.Error -> {
@@ -105,11 +105,13 @@ class ChatViewModel @Inject constructor(
         getAllUserJob?.cancel()
         getAllUserJob = getAllUserUseCase.execute(GetUsersParam(userIds))
             .onEach {
-                when(it) {
+                when (it) {
                     is ResultModel.Success -> {
                         setState(
                             currentState.copy(
-                                users = it.result,
+                                users = it.result.filter { user ->
+                                    user.id != currentState.currentUser?.id
+                                },
                                 error = null
                             )
                         )
@@ -127,21 +129,21 @@ class ChatViewModel @Inject constructor(
             .launchIn(coroutineScope)
     }
 
-    private fun getMessages(loadCount: Int) {
+    private fun getMessages() {
         conversationId?.let {
             getMessagesJob?.cancel()
-            getMessagesJob = getAllMessagesUseCase.execute(GetAllMessagesParam(
-                it,
-                loadCount
-            ))
+            getMessagesJob = getAllMessagesUseCase.execute(
+                GetAllMessagesParam(
+                    it,
+                    currentState.page
+                )
+            )
                 .onEach { result ->
                     when (result) {
                         is ResultModel.Success -> {
                             val messages = currentState.messages.toMutableList()
-                            Log.d("TAG", "getMessages: ${result.result.size}")
-                            messages.addAll(0, result.result.sortedBy { message ->
-                                message.timeSent
-                            })
+                            messages.addAll(result.result)
+                            currentState = currentState.copy(page = currentState.page + 1)
                             setState(
                                 currentState.copy(
                                     messages = messages,
@@ -175,7 +177,7 @@ class ChatViewModel @Inject constructor(
             }
 
             is ViewEvent.Send -> sendMessage(event.message)
-            is ViewEvent.LoadMoreMessages -> getMessages(event.loadCount)
+            is ViewEvent.LoadMoreMessages -> getMessages()
         }
     }
 
@@ -189,7 +191,6 @@ class ChatViewModel @Inject constructor(
             .onEach {
                 when (it) {
                     is ResultModel.Success -> {
-                        Log.d("TAG", "checkUsersPair: ${it.result.users}")
                         isUsersPaired = true
                         conversationId = it.result.id
                         setState(
@@ -214,7 +215,6 @@ class ChatViewModel @Inject constructor(
     }
 
     private fun joinConversation(user: UserModel) {
-        Log.d("TAG", "joinConversation: $isUsersPaired")
         if (!isUsersPaired) {
             val currentUser = currentState.currentUser
             val param = ConversationParam(
@@ -252,7 +252,7 @@ class ChatViewModel @Inject constructor(
                 }
                 .launchIn(coroutineScope)
         } else {
-            getMessages(0)
+            getMessages()
         }
     }
 
@@ -278,7 +278,6 @@ class ChatViewModel @Inject constructor(
             .onEach {
                 when (it) {
                     is ResultModel.Success -> {
-                        Log.d("TAG", "getUsersInRoom: ${it.result.name}")
                         newUsers.add(it.result)
                         setState(
                             currentState.copy(
@@ -286,7 +285,7 @@ class ChatViewModel @Inject constructor(
                                 error = null
                             )
                         )
-                        if(newUsers.isNotEmpty()) {
+                        if (newUsers.isNotEmpty()) {
                             checkUsersPair(newUsers[0])
                         }
                     }
@@ -336,12 +335,13 @@ class ChatViewModel @Inject constructor(
         val conversation: ConversationModel? = null,
         val textMessage: String = "",
         val error: String? = null,
+        val page: Int = 0,
     ) : BaseViewState
 
     sealed interface ViewEvent : BaseViewEvent {
         data class OnTextChanged(val text: String) : ViewEvent
         data class Send(val message: String) : ViewEvent
-        data class LoadMoreMessages(val loadCount: Int) : ViewEvent
+        data object LoadMoreMessages : ViewEvent
     }
 
     class ViewEffect : BaseViewEffect
