@@ -354,7 +354,7 @@ class ChatViewModel @Inject constructor(
             .onEach {
                 when(it) {
                     is ResultModel.Success -> {
-                        getMessage(messageModel)
+                       // getMessage(messageModel)
                     }
 
                     is ResultModel.Error -> {
